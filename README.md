@@ -38,4 +38,6 @@ After starting, open in a browser:
 - **Screen:** `http://localhost:8080/screen` – live screen capture (MJPEG)
 - **Webcam:** `http://localhost:8080/webcam` – live webcam (MJPEG)
 
-On the same network, use the printed “Network” URL (e.g. `http://192.168.x.x:8080/`) so other devices can view the streams.
+On the same network, use the printed "Network" URL (e.g. `http://192.168.x.x:8080/`) so other devices can view the streams.
+
+**Webcam on macOS:** Webcam capture uses JavaCV (OpenCV) on macOS (Intel and Apple Silicon) because the default sarxos driver often fails there. “Network” URL (e.g. `http://192.168.x.x:8080/`) so other devices can view the streams.
