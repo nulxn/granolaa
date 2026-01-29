@@ -1,1 +1,3 @@
 target/
+.m2/
+.vscode/
