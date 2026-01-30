@@ -1,4 +1,4 @@
-# HighoshWare
+# Granolaa
 
 While the app is running, the student's screen and webcam are streamed to local HTTP URLs that can be opened in any browser.
 
