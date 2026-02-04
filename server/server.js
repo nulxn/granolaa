@@ -6,6 +6,39 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 
+// Request logging middleware
+app.use((req, res, next) => {
+    const start = Date.now();
+    const timestamp = new Date().toISOString();
+    const ip = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
+    
+    console.log(`[${timestamp}] ${req.method} ${req.url} from ${ip}`);
+    if (Object.keys(req.query).length > 0) {
+        console.log(`  Query params:`, req.query);
+    }
+    if (req.headers['host']) {
+        console.log(`  Host: ${req.headers['host']}`);
+    }
+    
+    // Log response when it finishes
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        console.log(`[${timestamp}] ${req.method} ${req.url} -> ${res.statusCode} (${duration}ms)`);
+    });
+    
+    res.on('close', () => {
+        if (!res.finished) {
+            console.log(`[${timestamp}] ${req.method} ${req.url} -> connection closed (client disconnected)`);
+        }
+    });
+    
+    next();
+});
+
+// Let's Encrypt / Certbot ACME challenge (must be before other routes)
+const acmeDir = process.env.ACME_CHALLENGE_DIR || __dirname;
+app.use('/.well-known/acme-challenge', express.static(path.join(acmeDir, '.well-known', 'acme-challenge'), { index: false }));
+
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -16,27 +49,37 @@ const activeStreams = new Map();
 // Body: repeated [4-byte big-endian length][length bytes JPEG]. No body parser — read raw stream.
 app.post('/stream/screen', (req, res) => {
     const clientId = req.query.clientId;
+    console.log(`[STREAM] POST /stream/screen - clientId: ${clientId || 'MISSING'}`);
     if (!clientId) {
+        console.error(`[STREAM] Missing clientId for /stream/screen`);
         res.status(400).send('Missing clientId');
         return;
     }
     registerStream(clientId, 'screen');
     req.on('data', (chunk) => { feedChunk(clientId, 'screen', chunk); });
     req.on('end', () => { unregisterStream(clientId, 'screen'); });
-    req.on('error', () => { unregisterStream(clientId, 'screen'); });
+    req.on('error', (err) => { 
+        console.error(`[STREAM] Error in /stream/screen for clientId ${clientId}:`, err);
+        unregisterStream(clientId, 'screen'); 
+    });
     res.status(200).end();
 });
 
 app.post('/stream/webcam', (req, res) => {
     const clientId = req.query.clientId;
+    console.log(`[STREAM] POST /stream/webcam - clientId: ${clientId || 'MISSING'}`);
     if (!clientId) {
+        console.error(`[STREAM] Missing clientId for /stream/webcam`);
         res.status(400).send('Missing clientId');
         return;
     }
     registerStream(clientId, 'webcam');
     req.on('data', (chunk) => { feedChunk(clientId, 'webcam', chunk); });
     req.on('end', () => { unregisterStream(clientId, 'webcam'); });
-    req.on('error', () => { unregisterStream(clientId, 'webcam'); });
+    req.on('error', (err) => { 
+        console.error(`[STREAM] Error in /stream/webcam for clientId ${clientId}:`, err);
+        unregisterStream(clientId, 'webcam'); 
+    });
     res.status(200).end();
 });
 
@@ -181,9 +224,39 @@ function sendStreamList(ws) {
     }
 }
 
+// 404 handler - log all unmatched requests
+app.use((req, res) => {
+    console.error(`[404] ${req.method} ${req.url} - No route matched`);
+    console.error(`  Host: ${req.headers['host'] || 'unknown'}`);
+    console.error(`  User-Agent: ${req.headers['user-agent'] || 'unknown'}`);
+    console.error(`  Referer: ${req.headers['referer'] || 'none'}`);
+    console.error(`  Query:`, req.query);
+    console.error(`  Available routes: GET /, POST /stream/screen, POST /stream/webcam, WS /view`);
+    res.status(404).send('Not Found');
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+    console.error(`[ERROR] ${req.method} ${req.url}:`, err);
+    console.error(`  Stack:`, err.stack);
+    res.status(err.status || 500).send(err.message || 'Internal Server Error');
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+    console.error('Stack:', err.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Granolaa server running on http://localhost:${PORT}`);
     console.log(`WebSocket stream endpoint: ws://localhost:${PORT}/stream`);
     console.log(`WebSocket view endpoint: ws://localhost:${PORT}/view`);
+    console.log(`ACME challenge dir: ${acmeDir}`);
+    console.log(`Public dir: ${path.join(__dirname, 'public')}`);
 });
