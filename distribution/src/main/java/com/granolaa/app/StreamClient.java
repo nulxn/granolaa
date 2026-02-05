@@ -1,222 +1,138 @@
 package com.granolaa.app;
 
-import okhttp3.Call;
-import okhttp3.Interceptor;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
-import okio.BufferedSink;
 
 import java.io.IOException;
-import java.time.Instant;
+import java.nio.ByteBuffer;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
 
 /**
- * Sender side: sends screen and webcam frames to the server via HTTP POST (chunked).
- * WebSocket is used only by viewers (browser) to receive streams; this client uses
- * HTTP POST to /stream/screen and /stream/webcam with length-prefixed frames
- * (4-byte big-endian length + JPEG bytes).
+ * Sends frames to the server at 10 FPS. Same request format as SendOneFrameTest.
  */
 public class StreamClient {
 
-    private final String httpBaseUrl;
+    private static final long SEND_INTERVAL_MS = 100; // 10 FPS
+    private static final MediaType OCTET_STREAM = MediaType.get("application/octet-stream");
+
+    private final String baseUrl;
     private final String clientId;
     private final ScreenCapture screenCapture;
     private final WebcamCapture webcamCapture;
-    private final OkHttpClient okHttpClient;
-
-    private final AtomicReference<Call> screenCall = new AtomicReference<>();
-    private final AtomicReference<Call> webcamCall = new AtomicReference<>();
-    private Thread screenSenderThread;
-    private Thread webcamSenderThread;
+    private final OkHttpClient client;
     private volatile boolean running = true;
+    private Thread screenThread;
+    private Thread webcamThread;
 
     public StreamClient(String serverUrl, ScreenCapture screenCapture, WebcamCapture webcamCapture) {
+        this.baseUrl = serverUrl;
         this.clientId = UUID.randomUUID().toString();
         this.screenCapture = screenCapture;
         this.webcamCapture = webcamCapture;
-        // Convert WebSocket URLs to HTTP/HTTPS URLs
-        if (serverUrl.startsWith("wss://")) {
-            this.httpBaseUrl = serverUrl.replaceFirst("^wss://", "https://");
-        } else if (serverUrl.startsWith("ws://")) {
-            this.httpBaseUrl = serverUrl.replaceFirst("^ws://", "http://");
-        } else {
-            this.httpBaseUrl = serverUrl;
-        }
-        this.okHttpClient = new OkHttpClient.Builder()
+        this.client = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(0, TimeUnit.MILLISECONDS)
-                .writeTimeout(0, TimeUnit.MILLISECONDS)
-                .followRedirects(false) // Prevent redirects that might convert POST to GET
-                .addInterceptor(new LoggingInterceptor())
+                .readTimeout(5, TimeUnit.SECONDS)
+                .writeTimeout(5, TimeUnit.SECONDS)
                 .build();
     }
 
     public void start() {
         if (screenCapture.isScreenCaptureSupported()) {
-            startScreenStream();
+            screenThread = new Thread(this::runScreen, "screen-sender");
+            screenThread.setDaemon(true);
+            screenThread.start();
         }
-        startWebcamStream();
+        webcamThread = new Thread(this::runWebcam, "webcam-sender");
+        webcamThread.setDaemon(true);
+        webcamThread.start();
     }
 
     public void stop() {
         running = false;
-        Call sc = screenCall.getAndSet(null);
-        if (sc != null) sc.cancel();
-        Call wc = webcamCall.getAndSet(null);
-        if (wc != null) wc.cancel();
-        if (screenSenderThread != null) screenSenderThread.interrupt();
-        if (webcamSenderThread != null) webcamSenderThread.interrupt();
-    }
-
-    private static final long RECONNECT_DELAY_MS = 2_000;
-
-    private void startScreenStream() {
-        screenSenderThread = new Thread(() -> {
-            while (running) {
-                String url = httpBaseUrl + "/stream/screen?clientId=" + clientId;
-                Request request = new Request.Builder()
-                        .url(url)
-                        .post(new ChunkedFrameBody(screenCapture::getLatestFrame, "screen"))
-                        .header("Content-Type", "application/octet-stream")
-                        .build();
-                try {
-                    Call call = okHttpClient.newCall(request);
-                    screenCall.set(call);
-                    System.out.println("Screen stream connecting...");
-                    try (var response = call.execute()) {
-                        if (response.isSuccessful()) {
-                            System.out.println("Screen stream ended normally");
-                        } else {
-                            System.err.println("Screen stream response: " + response.code());
-                        }
-                    }
-                } catch (IOException e) {
-                    if (running) System.err.println("Screen stream error: " + e.getMessage());
-                } finally {
-                    screenCall.set(null);
-                }
-                if (running) {
-                    System.out.println("Screen stream reconnecting in " + (RECONNECT_DELAY_MS / 1000) + "s...");
-                    try {
-                        Thread.sleep(RECONNECT_DELAY_MS);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
-            }
-        }, "screen-sender");
-        screenSenderThread.setDaemon(true);
-        screenSenderThread.start();
-    }
-
-    private void startWebcamStream() {
-        webcamSenderThread = new Thread(() -> {
-            while (running) {
-                String url = httpBaseUrl + "/stream/webcam?clientId=" + clientId;
-                Request request = new Request.Builder()
-                        .url(url)
-                        .post(new ChunkedFrameBody(webcamCapture::getLatestFrame, "webcam"))
-                        .header("Content-Type", "application/octet-stream")
-                        .build();
-                try {
-                    Call call = okHttpClient.newCall(request);
-                    webcamCall.set(call);
-                    System.out.println("Webcam stream connecting...");
-                    try (var response = call.execute()) {
-                        if (response.isSuccessful()) {
-                            System.out.println("Webcam stream ended normally");
-                        } else {
-                            System.err.println("Webcam stream response: " + response.code());
-                        }
-                    }
-                } catch (IOException e) {
-                    if (running) System.err.println("Webcam stream error: " + e.getMessage());
-                } finally {
-                    webcamCall.set(null);
-                }
-                if (running) {
-                    System.out.println("Webcam stream reconnecting in " + (RECONNECT_DELAY_MS / 1000) + "s...");
-                    try {
-                        Thread.sleep(RECONNECT_DELAY_MS);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
-            }
-        }, "webcam-sender");
-        webcamSenderThread.setDaemon(true);
-        webcamSenderThread.start();
+        if (screenThread != null) screenThread.interrupt();
+        if (webcamThread != null) webcamThread.interrupt();
     }
 
     public String getClientId() {
         return clientId;
     }
 
-    /** Logs every outgoing request and its response. */
-    private static final class LoggingInterceptor implements Interceptor {
-        @Override
-        public Response intercept(Chain chain) throws IOException {
-            Request request = chain.request();
-            String ts = Instant.now().toString();
-            System.out.println("[" + ts + "] " + request.method() + " " + request.url());
-            long start = System.currentTimeMillis();
-            Response response = chain.proceed(request);
-            long duration = System.currentTimeMillis() - start;
-            System.out.println("[" + ts + "] " + request.method() + " " + request.url() + " -> " + response.code() + " (" + duration + "ms)");
-            return response;
+    private void runScreen() {
+        String url = baseUrl + "/stream/screen?clientId=" + clientId;
+        int n = 0;
+        while (running) {
+            byte[] frame = screenCapture.getLatestFrame();
+            if (frame == null || frame.length == 0) frame = minimalJpeg();
+            sendOne(url, frame, "screen", ++n);
+            sleep();
         }
     }
 
-    private class ChunkedFrameBody extends RequestBody {
-        private final Supplier<byte[]> frameSupplier;
-        private final String name;
-
-        ChunkedFrameBody(Supplier<byte[]> frameSupplier, String name) {
-            this.frameSupplier = frameSupplier;
-            this.name = name;
+    private void runWebcam() {
+        String url = baseUrl + "/stream/webcam?clientId=" + clientId;
+        int n = 0;
+        while (running) {
+            byte[] frame = webcamCapture.getLatestFrame();
+            if (frame == null || frame.length == 0) frame = minimalJpeg();
+            sendOne(url, frame, "webcam", ++n);
+            sleep();
         }
+    }
 
-        @Override
-        public MediaType contentType() {
-            return MediaType.get("application/octet-stream");
-        }
-
-        /** Unknown length so OkHttp uses chunked transfer encoding and streams the body. */
-        @Override
-        public long contentLength() {
-            return -1;
-        }
-
-        @Override
-        public void writeTo(BufferedSink sink) throws IOException {
-            int frameCount = 0;
-            while (running && !Thread.currentThread().isInterrupted()) {
-                byte[] frame = frameSupplier.get();
-                if (frame != null && frame.length > 0) {
-                    sink.writeInt(frame.length);
-                    sink.write(frame);
-                    sink.flush();
-                    frameCount++;
-                    if (frameCount % 50 == 1) {
-                        System.out.println("[" + name + "] sent frame #" + frameCount);
-                    }
-                }
-                try {
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+    private void sendOne(String url, byte[] frame, String name, int count) {
+        ByteBuffer buf = ByteBuffer.allocate(4 + frame.length);
+        buf.putInt(frame.length);
+        buf.put(frame);
+        byte[] body = buf.array();
+        Request request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(body, OCTET_STREAM))
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            if (count == 1) System.out.println("[" + name + "] POST " + url + " -> " + response.code());
+            if (!response.isSuccessful()) System.err.println("[" + name + "] " + response.code());
+            // Consume response body to avoid connection issues
+            if (response.body() != null) {
+                response.body().bytes(); // Read and discard
             }
-            System.out.println("[" + name + "] stream ended after " + frameCount + " frames");
+        } catch (IOException e) {
+            System.err.println("[" + name + "] " + e.getMessage());
         }
+    }
+
+    private void sleep() {
+        try {
+            Thread.sleep(SEND_INTERVAL_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static byte[] minimalJpeg() {
+        return new byte[] {
+                (byte)0xFF, (byte)0xD8, (byte)0xFF, (byte)0xE0, (byte)0x00, (byte)0x10, (byte)0x4A, (byte)0x46,
+                (byte)0x49, (byte)0x46, (byte)0x00, (byte)0x01, (byte)0x01, (byte)0x00, (byte)0x00, (byte)0x01,
+                (byte)0x00, (byte)0x01, (byte)0x00, (byte)0x00, (byte)0xFF, (byte)0xDB, (byte)0x00, (byte)0x43,
+                (byte)0x00, (byte)0x08, (byte)0x06, (byte)0x06, (byte)0x07, (byte)0x06, (byte)0x05, (byte)0x08,
+                (byte)0x07, (byte)0x07, (byte)0x07, (byte)0x09, (byte)0x09, (byte)0x08, (byte)0x0A, (byte)0x0C,
+                (byte)0x14, (byte)0x0D, (byte)0x0C, (byte)0x0B, (byte)0x0B, (byte)0x0C, (byte)0x19, (byte)0x12,
+                (byte)0x13, (byte)0x0F, (byte)0x14, (byte)0x1D, (byte)0x1A, (byte)0x1F, (byte)0x1E, (byte)0x1D,
+                (byte)0x1A, (byte)0x1C, (byte)0x1C, (byte)0x20, (byte)0x24, (byte)0x2E, (byte)0x27, (byte)0x20,
+                (byte)0x22, (byte)0x2C, (byte)0x23, (byte)0x1C, (byte)0x1C, (byte)0x28, (byte)0x37, (byte)0x29,
+                (byte)0x2C, (byte)0x30, (byte)0x31, (byte)0x34, (byte)0x34, (byte)0x34, (byte)0x1F, (byte)0x27,
+                (byte)0x39, (byte)0x3D, (byte)0x38, (byte)0x32, (byte)0x3C, (byte)0x2E, (byte)0x33, (byte)0x34,
+                (byte)0x32, (byte)0xFF, (byte)0xC0, (byte)0x00, (byte)0x0B, (byte)0x08, (byte)0x00, (byte)0x01,
+                (byte)0x00, (byte)0x01, (byte)0x01, (byte)0x01, (byte)0x11, (byte)0x00, (byte)0xFF, (byte)0xC4,
+                (byte)0x00, (byte)0x1F, (byte)0x00, (byte)0x00, (byte)0x01, (byte)0x05, (byte)0x01, (byte)0x01,
+                (byte)0x01, (byte)0x01, (byte)0x01, (byte)0x01, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00,
+                (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x01, (byte)0x02, (byte)0x03,
+                (byte)0x04, (byte)0x05, (byte)0x06, (byte)0x07, (byte)0x08, (byte)0x09, (byte)0x0A, (byte)0x0B,
+                (byte)0xFF, (byte)0xDA, (byte)0x00, (byte)0x08, (byte)0x01, (byte)0x01, (byte)0x00, (byte)0x00,
+                (byte)0x3F, (byte)0x00, (byte)0x7B, (byte)0xDF, (byte)0xFF, (byte)0xD9
+        };
     }
 }

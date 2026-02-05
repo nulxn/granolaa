@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class ScreenCapture implements Runnable {
 
-    private static final int DEFAULT_FPS = 10;
+    private static final int DEFAULT_FPS = 5;
     private static final String WAYLAND_DISPLAY = "WAYLAND_DISPLAY";
     private static final String XDG_SESSION_TYPE = "XDG_SESSION_TYPE";
 

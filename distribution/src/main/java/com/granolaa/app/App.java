@@ -4,16 +4,12 @@ import java.util.Scanner;
 
 public class App {
 
-    private static final String DEFAULT_SERVER_URL = "ws://granolaa.opencodingsociety.com";
+    private static final String DEFAULT_SERVER_URL = "http://granolaa.opencodingsociety.com";
 
     public static void main(String[] args) {
-        String serverUrl = System.getProperty("server", 
-                System.getenv().getOrDefault("SERVER_URL", DEFAULT_SERVER_URL));
-        
-        // Ensure server URL starts with ws:// or wss://
-        if (!serverUrl.startsWith("ws://") && !serverUrl.startsWith("wss://")) {
-            serverUrl = "ws://" + serverUrl;
-        }
+        String serverUrl = System.getProperty("server.url",
+                System.getProperty("server",
+                        System.getenv().getOrDefault("SERVER_URL", DEFAULT_SERVER_URL)));
 
         ScreenCapture screenCapture = new ScreenCapture();
         WebcamCapture webcamCapture = new WebcamCapture();
@@ -25,9 +21,8 @@ public class App {
         screenThread.start();
         webcamThread.start();
 
-        // Give capture threads a moment to start
         try {
-            Thread.sleep(500);
+            Thread.sleep(1000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -35,14 +30,9 @@ public class App {
         StreamClient streamClient = new StreamClient(serverUrl, screenCapture, webcamCapture);
         streamClient.start();
 
-        System.out.println("Granolaa – Client streaming to server");
-        System.out.println();
-        System.out.println("  Server:  " + serverUrl);
-        System.out.println("  Client ID: " + streamClient.getClientId());
-        System.out.println();
-        System.out.println("Press Enter to stop.");
+        System.out.println("Server: " + serverUrl + "  Client ID: " + streamClient.getClientId());
+        System.out.println("Sending once per second. Press Enter to stop.");
 
-        // Wait for user input to stop
         try (Scanner scanner = new Scanner(System.in)) {
             scanner.nextLine();
         }

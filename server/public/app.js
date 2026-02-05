@@ -2,6 +2,7 @@ const WS_URL = `ws://${window.location.host}/view`;
 let ws = null;
 let streams = new Map(); // clientId -> { screen: ImageData, webcam: ImageData }
 let reconnectTimeout = null;
+let hasReceivedFrame = false; // Track if we've ever received a frame
 
 function connect() {
     const statusEl = document.getElementById('status');
@@ -86,8 +87,10 @@ function handleStreamsUpdate(streamList) {
         }
     });
 
-    // Show/hide no streams message
-    if (streamList.length === 0) {
+    // Show/hide no streams message - hide permanently once we've received any frame
+    if (hasReceivedFrame) {
+        noStreamsEl.style.display = 'none';
+    } else if (streamList.length === 0) {
         noStreamsEl.style.display = 'block';
     } else {
         noStreamsEl.style.display = 'none';
@@ -136,6 +139,13 @@ function handleFrame(message) {
     const placeholder = document.getElementById(placeholderId);
     
     if (img && placeholder) {
+        // Mark that we've received at least one frame, hide "no streams" permanently
+        if (!hasReceivedFrame) {
+            hasReceivedFrame = true;
+            const noStreamsEl = document.getElementById('noStreams');
+            if (noStreamsEl) noStreamsEl.style.display = 'none';
+        }
+        
         // Convert base64 to blob URL for better performance
         const base64Data = `data:image/jpeg;base64,${data}`;
         img.src = base64Data;

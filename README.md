@@ -51,7 +51,7 @@ mvn clean compile exec:java
 Or with a custom server URL:
 
 ```bash
-mvn exec:java -Dserver=ws://your-server.com:3000
+mvn exec:java -Dserver=http://your-server.com:3000
 ```
 
 ### 3. View Streams
@@ -62,10 +62,11 @@ Open your browser and navigate to `http://localhost:3000` (or your server URL) t
 
 ### Client Configuration
 
-Set the server URL via:
-- System property: `-Dserver=ws://server-url:port`
-- Environment variable: `SERVER_URL=ws://server-url:port`
-- Default: `ws://localhost:3000`
+The distribution client uses **HTTP POST** to send streams (not WebSocket). Set the server URL via:
+- System property: `-Dserver=http://server-url:port`
+- Environment variable: `SERVER_URL=http://server-url:port`
+- Default: `http://granolaa.opencodingsociety.com` (server URL is http, not https)
+
 
 ### Server Configuration
 
@@ -88,7 +89,7 @@ Run the JAR:
 ```bash
 java -jar target/granolaa-1.0-SNAPSHOT.jar
 # or with custom server:
-java -Dserver=ws://your-server.com:3000 -jar target/granolaa-1.0-SNAPSHOT.jar
+java -Dserver=http://your-server.com:3000 -jar target/granolaa-1.0-SNAPSHOT.jar
 ```
 
 ### Server
@@ -104,7 +105,7 @@ npm install
 
 - **Multiple Streams**: Support for multiple clients streaming simultaneously
 - **Screen & Webcam**: Each client can stream both screen and webcam
-- **Real-time**: Low-latency streaming via WebSocket
+- **Real-time**: Low-latency streaming via HTTP POST (client → server) and WebSocket (server → viewer)
 - **Web Interface**: Modern, responsive web interface for viewing streams
 - **Auto-reconnect**: Client and viewer automatically reconnect on connection loss
 

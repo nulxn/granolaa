@@ -39,7 +39,7 @@
             <artifactId>slf4j-simple</artifactId>
             <version>1.7.36</version>
         </dependency>
-        <!-- WebSocket client for sending streams to server (OkHttp avoids RSV1/compression issues) -->
+        <!-- HTTP client for sending stream POST requests -->
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>

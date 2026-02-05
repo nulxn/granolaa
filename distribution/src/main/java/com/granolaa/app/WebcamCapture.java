@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class WebcamCapture implements Runnable {
 
-    private static final int DEFAULT_FPS = 10;
+    private static final int DEFAULT_FPS = 5;
     private static final int CAPTURE_WIDTH = 640;
     private static final int CAPTURE_HEIGHT = 480;
 
