@@ -92,7 +92,7 @@ button:active {
 
 .streams-container {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 20px;
 }
 
@@ -101,7 +101,8 @@ button:active {
     border-radius: 10px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     overflow: hidden;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s, grid-column 0.2s;
+    cursor: pointer;
 }
 
 .stream-card:hover {
@@ -116,6 +117,25 @@ button:active {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 8px;
+}
+
+.stream-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stream-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pin-btn,
+.expand-btn {
+    padding: 4px 10px;
+    font-size: 12px;
 }
 
 .stream-title {
@@ -165,6 +185,28 @@ button:active {
     display: block;
 }
 
+.pip-container {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 30%;
+    max-width: 200px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+}
+
+.stream-image-pip {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+}
+
+.pip-placeholder {
+    font-size: 10px;
+    padding: 4px;
+}
+
 .stream-placeholder {
     color: #9ca3af;
     font-size: 14px;
@@ -183,6 +225,15 @@ button:active {
 
 .no-streams p {
     font-size: 18px;
+}
+
+/* Expanded (maximized) card */
+.stream-card.expanded {
+    grid-column: 1 / -1;
+}
+
+.stream-card.expanded .stream-content {
+    aspect-ratio: 16 / 9;
 }
 
 @media (max-width: 768px) {
